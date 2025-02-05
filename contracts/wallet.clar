@@ -77,3 +77,33 @@
   )
 )
 
+
+
+;; Add deadline to goals map
+(define-map savings-goals-with-deadline
+  { owner: principal, goal-id: uint }
+  {
+    target-amount: uint,
+    current-amount: uint,
+    goal-name: (string-ascii 50),
+    deadline: uint,
+    is-active: bool
+  }
+)
+
+(define-public (create-goal-with-deadline (target uint) (name (string-ascii 50)) (deadline-blocks uint))
+  (let
+    ((new-goal-id (+ (var-get goal-counter) u1)))
+    (var-set goal-counter new-goal-id)
+    (ok (map-set savings-goals-with-deadline
+      { owner: tx-sender, goal-id: new-goal-id }
+      {
+        target-amount: target,
+        current-amount: u0,
+        goal-name: name,
+        deadline: (+ stacks-block-height deadline-blocks),
+        is-active: true
+      }
+    ))
+  )
+)
