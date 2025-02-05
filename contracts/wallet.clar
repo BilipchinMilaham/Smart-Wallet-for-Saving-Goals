@@ -185,3 +185,22 @@
 (define-read-only (check-milestone-reward (owner principal) (milestone uint))
   (map-get? milestone-rewards { owner: owner, milestone: milestone })
 )
+
+
+
+
+(define-map shared-goals
+  { goal-owner: principal, shared-with: principal }
+  { can-view: bool, can-contribute: bool }
+)
+
+(define-public (share-goal (share-with principal) (allow-contributions bool))
+  (ok (map-set shared-goals
+    { goal-owner: tx-sender, shared-with: share-with }
+    { can-view: true, can-contribute: allow-contributions }
+  ))
+)
+
+(define-read-only (get-shared-permissions (owner principal) (viewer principal))
+  (map-get? shared-goals { goal-owner: owner, shared-with: viewer })
+)
