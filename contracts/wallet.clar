@@ -107,3 +107,15 @@
     ))
   )
 )
+
+
+(define-read-only (get-goal-progress (owner principal) (goal-id uint))
+  (let (
+    (goal (unwrap! (map-get? savings-goals { owner: owner, goal-id: goal-id }) (err u102)))
+  )
+    (ok {
+      percentage: (/ (* (get current-amount goal) u100) (get target-amount goal)),
+      remaining: (- (get target-amount goal) (get current-amount goal))
+    })
+  )
+)
