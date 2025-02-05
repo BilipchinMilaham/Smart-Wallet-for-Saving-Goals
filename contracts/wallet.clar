@@ -149,3 +149,21 @@
     )
   )
 )
+
+
+
+(define-map goal-categories
+  { category-id: uint }
+  { category-name: (string-ascii 20) }
+)
+
+(define-public (add-category (id uint) (name (string-ascii 20)))
+  (ok (map-set goal-categories
+    { category-id: id }
+    { category-name: name }
+  ))
+)
+
+(define-read-only (get-category (id uint))
+  (map-get? goal-categories { category-id: id })
+)
