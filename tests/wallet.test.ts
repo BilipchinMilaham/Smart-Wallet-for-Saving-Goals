@@ -21,11 +21,11 @@ describe("smart wallet savings", () => {
     const withdraw = simnet.callPublicFn(
       "wallet",
       "withdraw",
-      [Cl.uint(100)],
+      [Cl.uint(100), Cl.uint(1)], // Added goal-id parameter
       wallet1
     );
     expect(withdraw.result).toBeErr(Cl.uint(102));
-  });
+});
 
 
 
