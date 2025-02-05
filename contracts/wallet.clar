@@ -119,3 +119,33 @@
     })
   )
 )
+
+
+
+
+(define-constant ERR-INVALID-PASSWORD (err u103))
+(define-data-var emergency-password uint u0)
+
+(define-public (set-emergency-password (password uint))
+  (ok (var-set emergency-password password))
+)
+
+(define-public (emergency-withdraw (amount uint) (password uint) (goal-id uint))
+  (let (
+    (current-goal (unwrap! (map-get? savings-goals { owner: tx-sender, goal-id: goal-id }) (err u102)))
+  )
+    (if (and 
+      (<= amount (get current-amount current-goal))
+      (is-eq password (var-get emergency-password)))
+      (ok (map-set savings-goals
+        { owner: tx-sender, goal-id: goal-id }
+        {
+          target-amount: (get target-amount current-goal),
+          current-amount: (- (get current-amount current-goal) amount),
+          goal-name: (get goal-name current-goal)
+        }
+      ))
+      ERR-INVALID-PASSWORD
+    )
+  )
+)
