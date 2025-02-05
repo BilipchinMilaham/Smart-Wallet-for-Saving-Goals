@@ -167,3 +167,21 @@
 (define-read-only (get-category (id uint))
   (map-get? goal-categories { category-id: id })
 )
+
+
+
+(define-map milestone-rewards
+  { owner: principal, milestone: uint }
+  { reward-amount: uint }
+)
+
+(define-public (set-milestone-reward (milestone-percentage uint) (reward uint))
+  (ok (map-set milestone-rewards
+    { owner: tx-sender, milestone: milestone-percentage }
+    { reward-amount: reward }
+  ))
+)
+
+(define-read-only (check-milestone-reward (owner principal) (milestone uint))
+  (map-get? milestone-rewards { owner: owner, milestone: milestone })
+)
