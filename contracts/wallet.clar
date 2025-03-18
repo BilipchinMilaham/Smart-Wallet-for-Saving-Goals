@@ -204,3 +204,246 @@
 (define-read-only (get-shared-permissions (owner principal) (viewer principal))
   (map-get? shared-goals { goal-owner: owner, shared-with: viewer })
 )
+
+
+;; Define notification types
+(define-constant NOTIFY-25-PERCENT u25)
+(define-constant NOTIFY-50-PERCENT u50)
+(define-constant NOTIFY-75-PERCENT u75)
+(define-constant NOTIFY-100-PERCENT u100)
+
+;; Store notification status
+(define-map goal-notifications
+  { owner: principal, goal-id: uint }
+  { 
+    last-notification: uint,
+    notifications-enabled: bool
+  }
+)
+
+(define-public (toggle-notifications (goal-id uint) (enabled bool))
+  (ok (map-set goal-notifications
+    { owner: tx-sender, goal-id: goal-id }
+    { last-notification: u0, notifications-enabled: enabled }
+  ))
+)
+
+(define-read-only (check-notification-milestone (owner principal) (goal-id uint))
+  (let (
+    (goal (unwrap! (map-get? savings-goals { owner: owner, goal-id: goal-id }) (err u102)))
+    (notifications (default-to { last-notification: u0, notifications-enabled: false }
+      (map-get? goal-notifications { owner: owner, goal-id: goal-id })))
+    (progress (/ (* (get current-amount goal) u100) (get target-amount goal)))
+  )
+    (if (get notifications-enabled notifications)
+      (ok {
+        should-notify: (> progress (get last-notification notifications)),
+        progress: progress
+      })
+      (ok { should-notify: false, progress: progress })
+    )
+  )
+)
+
+
+(define-map achievement-streaks
+  { owner: principal }
+  { 
+    current-streak: uint,
+    longest-streak: uint,
+    last-completion: uint
+  }
+)
+
+(define-constant STREAK-EXPIRY-BLOCKS u144) ;; About 1 day in blocks
+
+(define-public (update-achievement-streak (completed bool))
+  (let (
+    (current-stats (default-to { current-streak: u0, longest-streak: u0, last-completion: u0 }
+      (map-get? achievement-streaks { owner: tx-sender })))
+    (new-streak (if (and 
+                     completed 
+                     (< (- stacks-block-height (get last-completion current-stats)) STREAK-EXPIRY-BLOCKS))
+                  (+ (get current-streak current-stats) u1)
+                  (if completed u1 u0)))
+    (new-longest (if (> new-streak (get longest-streak current-stats))
+                    new-streak
+                    (get longest-streak current-stats)))
+  )
+    (ok (map-set achievement-streaks
+      { owner: tx-sender }
+      {
+        current-streak: new-streak,
+        longest-streak: new-longest,
+        last-completion: (if completed stacks-block-height (get last-completion current-stats))
+      }
+    ))
+  )
+)
+
+(define-map goal-templates
+  { template-id: uint }
+  {
+    name: (string-ascii 50),
+    suggested-amount: uint,
+    category: (string-ascii 20),
+    description: (string-ascii 100)
+  }
+)
+
+(define-data-var template-counter uint u0)
+
+(define-public (create-template 
+    (name (string-ascii 50)) 
+    (amount uint)
+    (category (string-ascii 20))
+    (description (string-ascii 100)))
+  (let ((new-id (+ (var-get template-counter) u1)))
+    (var-set template-counter new-id)
+    (ok (map-set goal-templates
+      { template-id: new-id }
+      {
+        name: name,
+        suggested-amount: amount,
+        category: category,
+        description: description
+      }
+    ))
+  )
+)
+
+(define-public (start-from-template (template-id uint))
+  (let ((template (unwrap! (map-get? goal-templates { template-id: template-id }) (err u104))))
+    (create-goal (get suggested-amount template) (get name template))
+  )
+)
+
+
+(define-map savings-groups
+  { group-id: uint }
+  {
+    name: (string-ascii 50),
+    target-amount: uint,
+    current-amount: uint,
+    member-count: uint,
+    creator: principal
+  }
+)
+
+(define-map group-members
+  { group-id: uint, member: principal }
+  { joined-at: uint, contribution: uint }
+)
+
+(define-data-var group-counter uint u0)
+
+(define-public (create-savings-group (name (string-ascii 50)) (target uint))
+  (let ((new-id (+ (var-get group-counter) u1)))
+    (var-set group-counter new-id)
+    (map-set savings-groups
+      { group-id: new-id }
+      {
+        name: name,
+        target-amount: target,
+        current-amount: u0,
+        member-count: u1,
+        creator: tx-sender
+      }
+    )
+    (ok (map-set group-members
+      { group-id: new-id, member: tx-sender }
+      { joined-at: stacks-block-height, contribution: u0 }
+    ))
+  )
+)
+
+(define-public (join-savings-group (group-id uint))
+  (let ((group (unwrap! (map-get? savings-groups { group-id: group-id }) (err u105))))
+    (ok (map-set group-members
+      { group-id: group-id, member: tx-sender }
+      { joined-at: stacks-block-height, contribution: u0 }
+    ))
+  )
+)
+
+(define-public (contribute-to-group (group-id uint) (amount uint))
+  (let (
+    (group (unwrap! (map-get? savings-groups { group-id: group-id }) (err u105)))
+    (member (unwrap! (map-get? group-members { group-id: group-id, member: tx-sender }) (err u106)))
+    (new-amount (+ (get contribution member) amount))
+  )
+    (if (>= amount u0)
+      (ok (map-set group-members
+        { group-id: group-id, member: tx-sender }
+        { joined-at: (get joined-at member), contribution: new-amount }
+      ))
+      ERR-INSUFFICIENT-FUNDS
+    )
+  )
+)
+
+(define-map goal-tags
+  { goal-id: uint, tag: (string-ascii 20) }
+  { added-at: uint }
+)
+
+(define-map user-tags
+  { owner: principal }
+  { tags-list: (list 20 (string-ascii 20)) }
+)
+
+(define-public (add-goal-tag (goal-id uint) (tag (string-ascii 20)))
+  (ok (map-set goal-tags
+    { goal-id: goal-id, tag: tag }
+    { added-at: stacks-block-height }
+  ))
+)
+
+(define-public (remove-goal-tag (goal-id uint) (tag (string-ascii 20)))
+  (ok (map-delete goal-tags { goal-id: goal-id, tag: tag }))
+)
+
+(define-map auto-save-rules
+  { owner: principal, goal-id: uint }
+  {
+    amount: uint,
+    frequency: uint, ;; in blocks
+    last-save: uint,
+    is-active: bool
+  }
+)
+
+(define-constant DAILY-BLOCKS u144)
+(define-constant WEEKLY-BLOCKS u1008)
+(define-constant MONTHLY-BLOCKS u4320)
+
+(define-public (set-auto-save-rule 
+    (goal-id uint) 
+    (amount uint)
+    (frequency uint))
+  (ok (map-set auto-save-rules
+    { owner: tx-sender, goal-id: goal-id }
+    {
+      amount: amount,
+      frequency: frequency,
+      last-save: stacks-block-height,
+      is-active: true
+    }
+  ))
+)
+
+(define-public (toggle-auto-save (goal-id uint) (enabled bool))
+  (let ((rule (unwrap! (map-get? auto-save-rules 
+          { owner: tx-sender, goal-id: goal-id }) 
+          (err u106))))
+    (ok (map-set auto-save-rules
+      { owner: tx-sender, goal-id: goal-id }
+      {
+        amount: (get amount rule),
+        frequency: (get frequency rule),
+        last-save: (get last-save rule),
+        is-active: enabled
+      }
+    ))
+  )
+)
