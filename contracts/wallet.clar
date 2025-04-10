@@ -447,3 +447,84 @@
     ))
   )
 )
+
+
+(define-map sub-goals
+  { parent-goal-id: uint, sub-goal-id: uint }
+  {
+    target-amount: uint,
+    current-amount: uint,
+    name: (string-ascii 50),
+    completed: bool
+  }
+)
+
+(define-data-var sub-goal-counter uint u0)
+
+(define-public (create-sub-goal 
+    (parent-goal-id uint) 
+    (target uint) 
+    (name (string-ascii 50)))
+  (let (
+    (new-sub-id (+ (var-get sub-goal-counter) u1))
+    (parent-goal (unwrap! (map-get? savings-goals 
+      { owner: tx-sender, goal-id: parent-goal-id }) (err u107)))
+  )
+    (var-set sub-goal-counter new-sub-id)
+    (ok (map-set sub-goals
+      { parent-goal-id: parent-goal-id, sub-goal-id: new-sub-id }
+      {
+        target-amount: target,
+        current-amount: u0,
+        name: name,
+        completed: false
+      }
+    ))
+  )
+)
+
+(define-read-only (get-sub-goals (parent-goal-id uint))
+  (map-get? sub-goals { parent-goal-id: parent-goal-id, sub-goal-id: (var-get sub-goal-counter) })
+)
+
+
+(define-map goal-analytics
+  { owner: principal }
+  {
+    total-goals-created: uint,
+    goals-completed: uint,
+    total-saved: uint,
+    average-completion-time: uint,
+    last-activity: uint
+  }
+)
+
+(define-public (update-analytics (goal-completed bool) (amount-saved uint))
+  (let (
+    (current-stats (default-to 
+      { 
+        total-goals-created: u0, 
+        goals-completed: u0, 
+        total-saved: u0,
+        average-completion-time: u0,
+        last-activity: u0 
+      }
+      (map-get? goal-analytics { owner: tx-sender })))
+  )
+    (ok (map-set goal-analytics
+      { owner: tx-sender }
+      {
+        total-goals-created: (+ (get total-goals-created current-stats) u1),
+        goals-completed: (+ (get goals-completed current-stats) 
+          (if goal-completed u1 u0)),
+        total-saved: (+ (get total-saved current-stats) amount-saved),
+        average-completion-time: stacks-block-height,
+        last-activity: stacks-block-height
+      }
+    ))
+  )
+)
+
+(define-read-only (get-user-analytics (owner principal))
+  (map-get? goal-analytics { owner: owner })
+)
