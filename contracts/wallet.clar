@@ -4,6 +4,9 @@
 (define-constant ERR-GOAL-NOT-REACHED (err u100))
 (define-constant ERR-INSUFFICIENT-FUNDS (err u101))
 
+;; NFT Definition
+(define-non-fungible-token achievement-nft uint)
+
 ;; Data Maps
 
 (define-public (deposit (amount uint) (goal-id uint))
@@ -528,3 +531,99 @@
 (define-read-only (get-user-analytics (owner principal))
   (map-get? goal-analytics { owner: owner })
 )
+
+
+(define-constant ERR-INVALID-SPLIT-AMOUNT (err u110))
+(define-constant ERR-UNAUTHORIZED (err u111))
+
+(define-map goal-splits
+  { original-goal-id: uint, split-id: uint }
+  {
+    amount: uint,
+    recipient: principal,
+    status: (string-ascii 10)
+  }
+)
+
+(define-data-var split-counter uint u0)
+
+(define-public (split-and-transfer-goal 
+    (goal-id uint)
+    (split-amount uint)
+    (recipient principal))
+  (let (
+    (current-goal (unwrap! (map-get? savings-goals 
+      { owner: tx-sender, goal-id: goal-id }) (err u102)))
+    (new-split-id (+ (var-get split-counter) u1))
+  )
+    (asserts! (>= (get current-amount current-goal) split-amount)
+      ERR-INVALID-SPLIT-AMOUNT)
+    
+    (var-set split-counter new-split-id)
+    
+    (unwrap! (create-goal split-amount "Split Goal Transfer") (err u112))
+    
+    (ok (map-set goal-splits
+      { original-goal-id: goal-id, split-id: new-split-id }
+      {
+        amount: split-amount,
+        recipient: recipient,
+        status: "pending"
+      }))
+  ))
+
+(define-public (accept-goal-split (original-goal-id uint) (split-id uint))
+  (let (
+    (split-details (unwrap! (map-get? goal-splits
+      { original-goal-id: original-goal-id, split-id: split-id })
+      ERR-UNAUTHORIZED))
+  )
+    (asserts! (is-eq tx-sender (get recipient split-details))
+      ERR-UNAUTHORIZED)
+    
+    (ok (map-set goal-splits
+      { original-goal-id: original-goal-id, split-id: split-id }
+      {
+        amount: (get amount split-details),
+        recipient: tx-sender,
+        status: "accepted"
+      }))
+  ))
+
+
+
+(define-map nft-metadata
+  { token-id: uint }
+  {
+    goal-name: (string-ascii 50),
+    achievement-date: uint,
+    amount-saved: uint
+  }
+)
+
+(define-data-var nft-counter uint u0)
+
+(define-public (mint-achievement-nft (goal-id uint))
+  (let (
+    (goal (unwrap! (map-get? savings-goals
+      { owner: tx-sender, goal-id: goal-id }) (err u102)))
+    (new-token-id (+ (var-get nft-counter) u1))
+  )
+    (asserts! (>= (get current-amount goal) (get target-amount goal))
+      ERR-GOAL-NOT-REACHED)
+    
+    (var-set nft-counter new-token-id)
+    
+    ;; (try! (nft-mint achievement-nft new-token-id tx-sender))
+    
+    (ok (map-set nft-metadata
+      { token-id: new-token-id }
+      {
+        goal-name: (get goal-name goal),
+        achievement-date: stacks-block-height,
+        amount-saved: (get target-amount goal)
+      }))
+  ))
+
+(define-read-only (get-achievement-metadata (token-id uint))
+  (map-get? nft-metadata { token-id: token-id }))
