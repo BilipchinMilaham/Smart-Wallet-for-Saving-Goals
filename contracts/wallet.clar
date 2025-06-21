@@ -627,3 +627,164 @@
 
 (define-read-only (get-achievement-metadata (token-id uint))
   (map-get? nft-metadata { token-id: token-id }))
+
+
+
+(define-constant ERR-INVALID-INTEREST-RATE (err u120))
+(define-constant ERR-COMPOUNDING-NOT-DUE (err u121))
+
+(define-map goal-interest-settings
+  { owner: principal, goal-id: uint }
+  {
+    annual-rate: uint,
+    compound-frequency: uint,
+    last-compound: uint,
+    total-interest-earned: uint,
+    is-enabled: bool
+  }
+)
+
+(define-constant BLOCKS-PER-YEAR u52560)
+(define-constant MAX-INTEREST-RATE u1000)
+(define-constant RATE-PRECISION u10000)
+
+(define-public (set-goal-interest-rate 
+    (goal-id uint) 
+    (annual-rate-basis-points uint)
+    (compound-frequency-blocks uint))
+  (let (
+    (goal (unwrap! (map-get? savings-goals 
+      { owner: tx-sender, goal-id: goal-id }) (err u102)))
+  )
+    (asserts! (<= annual-rate-basis-points MAX-INTEREST-RATE) ERR-INVALID-INTEREST-RATE)
+    (ok (map-set goal-interest-settings
+      { owner: tx-sender, goal-id: goal-id }
+      {
+        annual-rate: annual-rate-basis-points,
+        compound-frequency: compound-frequency-blocks,
+        last-compound: stacks-block-height,
+        total-interest-earned: u0,
+        is-enabled: true
+      }
+    ))
+  )
+)
+
+(define-public (compound-interest (goal-id uint))
+  (let (
+    (goal (unwrap! (map-get? savings-goals 
+      { owner: tx-sender, goal-id: goal-id }) (err u102)))
+    (interest-settings (unwrap! (map-get? goal-interest-settings
+      { owner: tx-sender, goal-id: goal-id }) (err u122)))
+    (blocks-since-compound (- stacks-block-height (get last-compound interest-settings)))
+    (current-amount (get current-amount goal))
+  )
+    (asserts! (get is-enabled interest-settings) (err u123))
+    (asserts! (>= blocks-since-compound (get compound-frequency interest-settings)) 
+      ERR-COMPOUNDING-NOT-DUE)
+    
+    (let (
+      (periods-elapsed (/ blocks-since-compound (get compound-frequency interest-settings)))
+      (period-rate (/ (get annual-rate interest-settings) 
+        (/ BLOCKS-PER-YEAR (get compound-frequency interest-settings))))
+      (interest-amount (/ (* current-amount period-rate periods-elapsed) RATE-PRECISION))
+      (new-amount (+ current-amount interest-amount))
+    )
+      (map-set savings-goals
+        { owner: tx-sender, goal-id: goal-id }
+        {
+          target-amount: (get target-amount goal),
+          current-amount: new-amount,
+          goal-name: (get goal-name goal)
+        }
+      )
+      (ok (map-set goal-interest-settings
+        { owner: tx-sender, goal-id: goal-id }
+        {
+          annual-rate: (get annual-rate interest-settings),
+          compound-frequency: (get compound-frequency interest-settings),
+          last-compound: stacks-block-height,
+          total-interest-earned: (+ (get total-interest-earned interest-settings) interest-amount),
+          is-enabled: (get is-enabled interest-settings)
+        }
+      ))
+    )
+  )
+)
+
+(define-public (toggle-interest-compounding (goal-id uint) (enabled bool))
+  (let (
+    (interest-settings (unwrap! (map-get? goal-interest-settings
+      { owner: tx-sender, goal-id: goal-id }) (err u122)))
+  )
+    (ok (map-set goal-interest-settings
+      { owner: tx-sender, goal-id: goal-id }
+      {
+        annual-rate: (get annual-rate interest-settings),
+        compound-frequency: (get compound-frequency interest-settings),
+        last-compound: (get last-compound interest-settings),
+        total-interest-earned: (get total-interest-earned interest-settings),
+        is-enabled: enabled
+      }
+    ))
+  )
+)
+
+(define-read-only (calculate-future-value 
+    (goal-id uint) 
+    (owner principal)
+    (future-blocks uint))
+  (let (
+    (goal (unwrap! (map-get? savings-goals 
+      { owner: owner, goal-id: goal-id }) (err u102)))
+    (interest-settings (unwrap! (map-get? goal-interest-settings
+      { owner: owner, goal-id: goal-id }) (err u122)))
+    (current-amount (get current-amount goal))
+    (annual-rate (get annual-rate interest-settings))
+    (compound-frequency (get compound-frequency interest-settings))
+  )
+    (if (get is-enabled interest-settings)
+      (let (
+        (periods (/ future-blocks compound-frequency))
+        (period-rate (/ annual-rate (/ BLOCKS-PER-YEAR compound-frequency)))
+        (compound-multiplier (+ RATE-PRECISION period-rate))
+        (future-value (/ (* current-amount (pow compound-multiplier periods)) 
+          (pow RATE-PRECISION periods)))
+      )
+        (ok {
+          current-value: current-amount,
+          future-value: future-value,
+          interest-earned: (- future-value current-amount),
+          periods: periods
+        })
+      )
+      (ok {
+        current-value: current-amount,
+        future-value: current-amount,
+        interest-earned: u0,
+        periods: u0
+      })
+    )
+  )
+)
+
+(define-read-only (get-interest-settings (owner principal) (goal-id uint))
+  (map-get? goal-interest-settings { owner: owner, goal-id: goal-id })
+)
+
+(define-read-only (check-compound-eligibility (owner principal) (goal-id uint))
+  (let (
+    (interest-settings (unwrap! (map-get? goal-interest-settings
+      { owner: owner, goal-id: goal-id }) (err u122)))
+    (blocks-since-compound (- stacks-block-height (get last-compound interest-settings)))
+  )
+    (ok {
+      is-due: (>= blocks-since-compound (get compound-frequency interest-settings)),
+      blocks-remaining: (if (>= blocks-since-compound (get compound-frequency interest-settings))
+        u0
+        (- (get compound-frequency interest-settings) blocks-since-compound)),
+      next-compound-block: (+ (get last-compound interest-settings) 
+        (get compound-frequency interest-settings))
+    })
+  )
+)
