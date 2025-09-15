@@ -50,6 +50,21 @@ plan:
     - id: 0
       transactions:
         - emulated-contract-publish:
+            contract-name: portfolio-manager
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: "contracts\\portfolio-manager.clar"
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: savings-challenges
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: "contracts\\savings-challenges.clar"
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: savings-insight-analytics
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: "contracts\\savings-insight-analytics.clar"
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: wallet
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: "contracts\\wallet.clar"

@@ -9,6 +9,22 @@ requirements = []
 path = 'contracts/wallet.clar'
 clarity_version = 3
 epoch = 3.1
+
+[contracts.savings-challenges]
+path = 'contracts/savings-challenges.clar'
+clarity_version = 3
+epoch = 3.1
+
+[contracts.portfolio-manager]
+path = 'contracts/portfolio-manager.clar'
+clarity_version = 3
+epoch = 3.1
+
+[contracts.savings-insight-analytics]
+path = 'contracts/savings-insight-analytics.clar'
+clarity_version = 3
+epoch = 3.1
+
 [repl.analysis]
 passes = ['check_checker']
 
